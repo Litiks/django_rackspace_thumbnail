@@ -1,6 +1,7 @@
 import os
 import Image
 from cStringIO import StringIO
+from uuid import uuid4
 
 from django.core.files.base import ContentFile
 from django.template import Library
@@ -55,7 +56,7 @@ def thumbnail(file, size='104x104'):
         myfile = ContentFile(new_image.getvalue())
         
         #save the thumb (https://docs.djangoproject.com/en/dev/ref/models/fields/#django.db.models.fields.files.FieldFile.save)
-        thumb.image.save(miniature, myfile)
+        thumb.image.save(uuid4().hex + format, myfile)
         
     return thumb.image.url
 
