@@ -7,11 +7,13 @@ from cStringIO import StringIO
 from uuid import uuid4
 
 from django.core.files.base import ContentFile
+from django.core.cache import cache
 from django.template import Library
 
 from thumbnail.models import Thumbnail
 
 register = Library()
+cache_prefix = "thumbnails-lKXTu><O1F(tms?l}*~"   # This is just a random string
 
 def thumbnail(file, size='104x104', square=False):
     """
@@ -30,59 +32,65 @@ def thumbnail(file, size='104x104', square=False):
         miniature = basename + '_' + size + format
     
     #do we have a thumbnail by this name?
-    thumbnails = Thumbnail.objects.filter(name=miniature)
-    if thumbnails:
-        thumb = thumbnails[0]
+    cache_key = cache_prefix + miniature
+    thumb = cache.get(cache_key)
+    if not thumb:
+        #check the database
+        thumbnails = Thumbnail.objects.filter(name=miniature)
+        if thumbnails:
+            thumb = thumbnails[0]
         
-    else:
-        #create it
-        
-        #fetch the data (from rackspace, or wherever it might be)
-        try:
-            data = StringIO(file.read())
-            image = Image.open(data)
-        except:
-            return None
+        else:
+            # Looks like it doesn't exist. Let create it
+            
+            # load the image data (from rackspace, or wherever it might be)
+            try:
+                data = StringIO(file.read())
+                image = Image.open(data)
+            except:
+                return None
 
-        #Do the work
-        if square:
-            width, height = image.size
-            if width > height:
-                delta = width - height
-                left = int(delta/2)
-                upper = 0
-                right = height + left
-                lower = height
-            else:
-                delta = height - width
-                left = 0
-                upper = int(delta/2)
-                right = width
-                lower = width + upper
+            # Do the work
+            if square:
+                width, height = image.size
+                if width > height:
+                    delta = width - height
+                    left = int(delta/2)
+                    upper = 0
+                    right = height + left
+                    lower = height
+                else:
+                    delta = height - width
+                    left = 0
+                    upper = int(delta/2)
+                    right = width
+                    lower = width + upper
 
-            # carryover the image format manually (not sure why this doesn't work automatically)
-            image_format = image.format
-            image = image.crop((left, upper, right, lower))
-            image.format = image_format
+                # carryover the image format manually (not sure why this doesn't work automatically)
+                image_format = image.format
+                image = image.crop((left, upper, right, lower))
+                image.format = image_format
 
-        image.thumbnail([x, y], Image.ANTIALIAS)
-        
-        # now, save it
-        
-        #prep work
-        thumb = Thumbnail(
-            name = miniature,
-        )
-        new_image = StringIO()
-        try:
-            image.save(new_image, image.format, quality=90, optimize=1)
-        except:
-            image.save(new_image, image.format, quality=90)
-        #put the image data in a django friendly object (https://docs.djangoproject.com/en/dev/ref/files/file/#django.core.files.File)
-        myfile = ContentFile(new_image.getvalue())
-        
-        #save the thumb (https://docs.djangoproject.com/en/dev/ref/models/fields/#django.db.models.fields.files.FieldFile.save)
-        thumb.image.save(uuid4().hex + format, myfile)
+            image.thumbnail([x, y], Image.ANTIALIAS)
+            
+            # Now, save it
+            # prep work
+            thumb = Thumbnail(
+                name = miniature,
+            )
+            new_image = StringIO()
+            try:
+                image.save(new_image, image.format, quality=90, optimize=1)
+            except:
+                image.save(new_image, image.format, quality=90)
+            # put the image data in a django friendly object (https://docs.djangoproject.com/en/dev/ref/files/file/#django.core.files.File)
+            myfile = ContentFile(new_image.getvalue())
+            
+            # save the thumb (https://docs.djangoproject.com/en/dev/ref/models/fields/#django.db.models.fields.files.FieldFile.save)
+            thumb.image.save(uuid4().hex + format, myfile)
+
+        # cache it
+        cache.set(cache_key, thumb, 86400)
         
     return thumb.image.url
 
