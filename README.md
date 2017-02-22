@@ -10,8 +10,8 @@ It alsp supports temp_urls, and it's very quick. We make use of django's default
 Installation
 ------------
 
-- using pip: pip install https://github.com/Litiks/django_rackspace_thumbnail/archive/master.zip
-- or: add to your requirements.txt: -e git+https://github.com/Litiks/django_rackspace_thumbnail.git#egg=django_rackspace_thumbnail
+- using pip: `pip install https://github.com/Litiks/django_rackspace_thumbnail/archive/master.zip`
+- or: add to your requirements.txt: `-e git+https://github.com/Litiks/django_rackspace_thumbnail.git#egg=django_rackspace_thumbnail`
 - or: copy the 'thumbnail' folder to your python working directory
 
 
