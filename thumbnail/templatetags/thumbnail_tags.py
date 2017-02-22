@@ -1,4 +1,5 @@
 import os
+import hashlib
 try:
     from PIL import Image
 except:
@@ -10,10 +11,17 @@ from django.core.files.base import ContentFile
 from django.core.cache import cache
 from django.template import Library
 
+# this is a little dirty.. but it works for me.
+try:
+    from cumulus.settings import CUMULUS
+    IMAGE_URL_TIMEOUT = CUMULUS.get('X_TEMP_URL_TIMEOUT', 86400)
+except:
+    IMAGE_URL_TIMEOUT = 86400
+
 from thumbnail.models import Thumbnail
 
 register = Library()
-cache_prefix = "thumbnails-lKXTu><O1F(tms?l}*~"   # This is just a random string
+cache_prefix = "thumbnails-eep4zejdoc0bi"   # This is just a random string
 
 def thumbnail(file, size='104x104', square=False):
     """
@@ -31,12 +39,23 @@ def thumbnail(file, size='104x104', square=False):
     else:
         miniature = basename + '_' + size + format
     
-    #do we have a thumbnail by this name?
     cache_key = cache_prefix + miniature
+    # Memcached doesn't like spaces?
+    cache_key = cache_key.replace(' ', '_')
+
+    # we can cache the url that we return, but not forever. 
+    # specifically, If we're using a 3rd party file server (ie:cumulus), we might be generating a 'temporary url', which often has a short timeout.
+    url_cache_key = cache_key + "url"
+    url = cache.get(url_cache_key)
+    if url:
+        return url
+
+    #do we have a thumbnail by this name?
     thumb = cache.get(cache_key)
     if not thumb:
         #check the database
-        thumbnails = Thumbnail.objects.filter(name=miniature)
+        hexdigest = hashlib.md5(miniature).hexdigest()
+        thumbnails = Thumbnail.objects.filter(hexdigest=hexdigest)
         if thumbnails:
             thumb = thumbnails[0]
         
@@ -76,6 +95,7 @@ def thumbnail(file, size='104x104', square=False):
             # Now, save it
             # prep work
             thumb = Thumbnail(
+                hexdigest = hexdigest,
                 name = miniature,
             )
             new_image = StringIO()
@@ -86,13 +106,19 @@ def thumbnail(file, size='104x104', square=False):
             # put the image data in a django friendly object (https://docs.djangoproject.com/en/dev/ref/files/file/#django.core.files.File)
             myfile = ContentFile(new_image.getvalue())
             
-            # save the thumb (https://docs.djangoproject.com/en/dev/ref/models/fields/#django.db.models.fields.files.FieldFile.save)
+            # save the thumb (this also saves the thumbnail record) (https://docs.djangoproject.com/en/dev/ref/models/fields/#django.db.models.fields.files.FieldFile.save)
             thumb.image.save(uuid4().hex + format, myfile)
 
         # cache it
         cache.set(cache_key, thumb, 86400)
-        
-    return thumb.image.url
+
+    # load the thumbnail (from rackspace, or wherever it might be)
+    try:
+        url = thumb.image.url
+    except:
+        return None
+    cache.set(url_cache_key, url, IMAGE_URL_TIMEOUT - 60)
+    return url
 
 register.filter(thumbnail)
 
